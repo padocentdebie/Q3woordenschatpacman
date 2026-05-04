@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <title>Politie Academie - Operationele Training 8</title>
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.1.3/firebase-database-compat.js"></script>
+    <style>
+        :root { --p-blue: #1a2a3a; --p-gold: #b08d57; --p-grey: #f0f2f5; --p-danger: #a94442; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--p-grey); margin: 0; overflow-x: hidden; }
+        .hidden { display: none !important; }
+        
+        #header { background: var(--p-blue); color: white; padding: 15px 40px; display: flex; justify-content: space-between; border-bottom: 3px solid var(--p-gold); }
+        #login-screen { position: fixed; inset: 0; background: var(--p-blue); z-index: 2000; display: flex; align-items: center; justify-content: center; }
+        .login-card { background: white; padding: 40px; border-radius: 4px; width: 350px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        
+        .main-content { max-width: 900px; margin: 20px auto; padding: 20px; }
+        .box { background: white; padding: 30px; border-radius: 2px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); border-left: 5px solid var(--p-gold); }
+        
+        /* Pacman Arena */
+        #pacman-container { background: #000; padding: 15px; border-radius: 8px; border: 4px solid var(--p-gold); text-align: center; }
+        canvas { background: #000; display: block; margin: 0 auto; border: 2px solid #222; }
+
+        input, select { padding: 12px; margin: 10px 0; width: 100%; box-sizing: border-box; border: 1px solid #ccc; font-size: 1rem; }
+        .btn { padding: 12px 24px; cursor: pointer; border: none; font-weight: bold; border-radius: 3px; color: white; transition: 0.2s; }
+        .btn-gold { background: var(--p-gold); }
+        .btn-blue { background: var(--p-blue); }
+        
+        .quiz-item { background: #f9f9f9; padding: 15px; margin-bottom: 15px; border-radius: 4px; border-left: 3px solid var(--p-blue); }
+        .option { display: block; margin: 8px 0; cursor: pointer; padding: 5px; border-radius: 3px; }
+        .option:hover { background: #eee; }
+    </style>
+</head>
+<body>
+
+<div id="login-screen">
+    <div class="login-card">
+        <h2 style="color: var(--p-blue);">SYSTEEM LOG-IN</h2>
+        <input type="text" id="firstname" placeholder="Naam Agent">
+        <select id="class-select">
+            <option value="" disabled selected>Eenheid...</option>
+            <option>Alpha</option><option>Bravo</option><option>Charlie</option><option>Delta</option>
+        </select>
+        <button class="btn btn-blue" style="width:100%" onclick="window.init('student')">START DOSSIER</button>
+        <button class="btn btn-gold" style="width:100%; margin-top:10px; font-size:0.8rem" onclick="window.init('docent')">COMMANDER ACCESS</button>
+    </div>
+</div>
+
+<div id="header">
+    <div id="status-title">DOSSIER ANALYSE | FASE 1</div>
+    <div id="user-display" style="color: var(--p-gold); font-weight: bold;"></div>
+</div>
+
+<div class="main-content">
+    <div id="dossier-section" class="box">
+        <h3 id="case-header">DOSSIERSTUK #1</h3>
+        <p id="display-sentence" style="font-size: 1.3rem; min-height: 60px; color: var(--p-blue);"></p>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
+            <input type="text" id="input-word" placeholder="Vul structuurwoord in..." oninput="window.checkProgress()">
+            <input type="text" id="input-relation" placeholder="Verband (bijv. Reden)">
+        </div>
+        <p id="progress-msg" style="margin-top: 20px; font-weight: bold; color: var(--p-gold); text-align: center;">Status: 0/5 bewijsstukken voltooid.</p>
+    </div>
+
+    <div id="pacman-section" class="hidden">
+        <div id="pacman-container">
+            <h2 style="color: yellow; font-family: 'Courier New', monospace; letter-spacing: 2px;">TRAINING: AGENT-ESCAPE</h2>
+            <canvas id="pacCanvas" width="340" height="340"></canvas>
+            <p style="color: #fff; font-size: 0.8rem; margin-top: 10px;">GEBRUIK DE PIJLTOETSEN OM DE SPOOKJES TE ONTWIJKEN</p>
+        </div>
+    </div>
+
+    <div id="quiz-section" class="box hidden">
+        <h2 style="border-bottom: 2px solid var(--p-gold); padding-bottom: 10px;">EINDTOETS: TERMINOLOGIE</h2>
+        <div id="quiz-content"></div>
+        <button class="btn btn-blue" style="width: 100%; margin-top: 20px;" onclick="alert('Resultaten opgeslagen in Centraal Register.')">VERSTUUR ANALYSE</button>
+    </div>
+</div>
+
+<script>
+// --- DATA EN CONFIG ---
+const firebaseConfig = {
+    apiKey: "AIzaSyB12mTMBnuxdC4W4htyFO_C7Dnh3maVKew",
+    authDomain: "decoroefening.firebaseapp.com",
+    databaseURL: "https://decoroefening-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "decoroefening",
+    storageBucket: "decoroefening.firebasestorage.app"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
+const zinnen = [
+    "De verdachte vluchtte te voet, ... de agenten hem niet direct konden boeien.",
+    "We doorzochten de woning grondig; ... vonden we het illegale wapen.",
+    "De getuige legde een verklaring af, ... hij was nog steeds erg angstig.",
+    "Er waren diverse bewijsstukken, ... een bebloed mes en een vingerafdruk.",
+    "De agent trok zijn taser ... de situatie niet verder mocht escaleren."
+];
+const sleutel = ["waardoor", "uiteindelijk", "maar", "zoals", "omdat"];
+
+const woordenlijst = [
+    {q: "Urgente", a: "Dringend", o: ["Dringend", "Vrijblijvend", "Traag"]},
+    {q: "Opportunistisch", a: "Geneigd om kansen te grijpen", o: ["Eerlijk", "Geneigd om kansen te grijpen", "Besluiteloos"]},
+    {q: "Index", a: "Systematische lijst", o: ["Systematische lijst", "Voorwoord", "Samenvatting"]},
+    {q: "Rationeel", a: "Gebaseerd op logica en rede", o: ["Emotioneel", "Gebaseerd op logica en rede", "Onvoorspelbaar"]},
+    {q: "Telepathie", a: "Overdracht van gedachten", o: ["Zintuiglijke waarneming", "Overdracht van gedachten", "Snel lezen"]},
+    {q: "Dispuut", a: "Formele discussie/twistpunt", o: ["Samenwerking", "Formele discussie/twistpunt", "Vriendschap"]},
+    {q: "Nominale", a: "In naam of titel", o: ["In naam of titel", "Groot en machtig", "Onzichtbaar"]},
+    {q: "Aristocraten", a: "Leden van de hoogste klasse", o: ["Leden van de hoogste klasse", "Vrijwilligers", "Militairen"]},
+    {q: "Extraneus", a: "Niet behorend tot iets", o: ["Niet behorend tot iets", "Essentieel deel", "Heel erg groot"]},
+    {q: "Cohort", a: "Groep met gemeenschappelijk kenmerk", o: ["Tegenstander", "Groep met gemeenschappelijk kenmerk", "Individu"]},
+    {q: "Contaminatie", a: "Besmetting", o: ["Reiniging", "Besmetting", "Isolatie"]},
+    {q: "Canon", a: "Verzameling van werken", o: ["Verzameling van werken", "Wapenfeit", "Muziekinstrument"]},
+    {q: "Bavarois", a: "Luchtig romig nagerecht", o: ["Soort soep", "Luchtig romig nagerecht", "Visgerecht"]},
+    {q: "Distantie", a: "Afstand in ruimte of tijd", o: ["Nabijheid", "Afstand in ruimte of tijd", "Snelheid"]},
+    {q: "Demagogie", a: "Manipuleren van een menigte", o: ["Leiderschap", "Manipuleren van een menigte", "Eerlijke handel"]},
+    {q: "Figuratief", a: "Symbolisch/metaforisch", o: ["Letterlijk", "Symbolisch/metaforisch", "Onbegrijpelijk"]},
+    {q: "Attitude", a: "Manier van denken/houding", o: ["Manier van denken/houding", "Fysieke kracht", "Uiterlijk"]},
+    {q: "Subiet", a: "Plotseling en onverwacht", o: ["Na een lange tijd", "Plotseling en onverwacht", "Gepland"]},
+    {q: "Imperium", a: "Groot rijk of machtsgebied", o: ["Kleine winkel", "Groot rijk of machtsgebied", " Democratie"]},
+    {q: "Etniciteit", a: "Culturele achtergrond", o: ["Politieke kleur", "Culturele achtergrond", "Leeftijd"]},
+    {q: "Exhibitie", a: "Openbare tentoonstelling", o: ["Geheime bijeenkomst", "Openbare tentoonstelling", "Opslagplaats"]},
+    {q: "Demoraliseren", a: "Moed ontnemen", o: ["Motiveren", "Moed ontnemen", "Lesgeven"]}
+];
+
+let currentUser = "";
+let currentIdx = 0;
+let solved = new Set();
+
+// --- INITIALISATIE ---
+window.init = function(role) {
+    const fName = document.getElementById('firstname').value.trim();
+    const eKlas = document.getElementById('class-select').value;
+    if(!fName || !eKlas) return alert("Agent gegevens ontbreken.");
+    
+    currentUser = fName + "-" + eKlas;
+    document.getElementById('login-screen').classList.add('hidden');
+    document.getElementById('user-display').innerText = currentUser.toUpperCase();
+    
+    loadCase();
+    buildQuiz();
+};
+
+function loadCase() {
+    document.getElementById('display-sentence').innerText = zinnen[currentIdx];
+    document.getElementById('case-header').innerText = "DOSSIERSTUK #" + (currentIdx + 1);
+}
+
+window.checkProgress = function() {
+    const val = document.getElementById('input-word').value.toLowerCase().trim();
+    if(val === sleutel[currentIdx] && !solved.has(currentIdx)) {
+        solved.add(currentIdx);
+        document.getElementById('progress-msg').innerText = `Status: ${solved.size}/5 bewijsstukken voltooid.`;
+        if(solved.size >= 5) {
+            setTimeout(startPacman, 500);
+        } else {
+            // Ga naar volgende zin als deze goed is
+            setTimeout(() => {
+                currentIdx = (currentIdx + 1) % 5;
+                loadCase();
+                document.getElementById('input-word').value = "";
+                document.getElementById('input-relation').value = "";
+            }, 800);
+        }
+    }
+};
+
+function startPacman() {
+    document.getElementById('dossier-section').classList.add('hidden');
+    document.getElementById('status-title').innerText = "OPERATIE: ESCAPE";
+    document.getElementById('pacman-section').classList.remove('hidden');
+    initPacmanEngine();
+}
+
+function buildQuiz() {
+    const quizBox = document.getElementById('quiz-content');
+    woordenlijst.forEach((item, i) => {
+        let h = `<div class="quiz-item"><p><strong>${i+1}. ${item.q}</strong></p>`;
+        item.o.forEach(opt => {
+            h += `<label class="option"><input type="radio" name="w${i}"> ${opt}</label>`;
+        });
+        quizBox.innerHTML += h + `</div>`;
+    });
+}
+
+// --- DE PAC-MAN PLATTEGROND ENGINE ---
+function initPacmanEngine() {
+    const canvas = document.getElementById('pacCanvas');
+    const ctx = canvas.getContext('2d');
+    const TILE = 20;
+    
+    // Plattegrond: 1 = muur, 0 = puntje, 2 = leeg
+    const maze = [
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+        [1,0,0,0,0,1,0,0,0,0,0,1,0,0,0,0,1],
+        [1,0,1,1,0,1,0,1,1,1,0,1,0,1,1,0,1],
+        [1,0,0,0,0,0,0,0,1,0,0,0,0,0,0,0,1],
+        [1,1,0,1,1,1,1,0,1,0,1,1,1,1,0,1,1],
+        [2,0,0,0,0,0,1,0,0,0,1,0,0,0,0,0,2],
+        [1,1,0,1,1,0,1,1,1,1,1,0,1,1,0,1,1],
+        [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+        [1,0,1,1,0,1,1,1,2,1,1,1,0,1,1,0,1],
+        [1,0,0,1,0,0,0,0,0,0,0,0,0,1,0,0,1],
+        [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+    ];
+
+    let player = { x: 8, y: 5, dir: null, nextDir: null };
+    let ghost = { x: 1, y: 1, dir: {x: 1, y: 0} };
+    let running = true;
+
+    function draw() {
+        if(!running) return;
+        ctx.fillStyle = "black";
+        ctx.fillRect(0,0, canvas.width, canvas.height);
+
+        // Teken Plattegrond
+        for(let y=0; y<maze.length; y++){
+            for(let x=0; x<maze[y].length; x++){
+                if(maze[y][x] === 1){
+                    ctx.fillStyle = "blue";
+                    ctx.fillRect(x*TILE, y*TILE, TILE-2, TILE-2);
+                } else if(maze[y][x] === 0){
+                    ctx.fillStyle = "white";
+                    ctx.beginPath();
+                    ctx.arc(x*TILE+TILE/2, y*TILE+TILE/2, 2, 0, 7);
+                    ctx.fill();
+                }
+            }
+        }
+
+        // Beweeg Ghost (simpel)
+        if(Math.random() < 0.05) {
+            const dirs = [{x:1,y:0},{x:-1,y:0},{x:0,y:1},{x:0,y:-1}];
+            ghost.dir = dirs[Math.floor(Math.random()*4)];
+        }
+        let nx = ghost.x + ghost.dir.x;
+        let ny = ghost.y + ghost.dir.y;
+        if(maze[ny] && maze[ny][nx] !== 1) { ghost.x = nx; ghost.y = ny; }
+
+        // Ghost tekenen
+        ctx.fillStyle = "red";
+        ctx.fillRect(ghost.x*TILE+2, ghost.y*TILE+2, TILE-4, TILE-4);
+
+        // Pacman tekenen
+        ctx.fillStyle = "yellow";
+        ctx.beginPath();
+        ctx.arc(player.x*TILE+TILE/2, player.y*TILE+TILE/2, 8, 0.2*Math.PI, 1.8*Math.PI);
+        ctx.lineTo(player.x*TILE+TILE/2, player.y*TILE+TILE/2);
+        ctx.fill();
+
+        // Check Collision
+        if(player.x === ghost.x && player.y === ghost.y) {
+            running = false;
+            alert("Systeemfout: Agent onderschept. Start terminologie test.");
+            document.getElementById('pacman-section').classList.add('hidden');
+            document.getElementById('quiz-section').classList.remove('hidden');
+            document.getElementById('status-title').innerText = "EINDTOETS: TERMINOLOGIE";
+        }
+
+        setTimeout(() => requestAnimationFrame(draw), 150);
+    }
+
+    window.onkeydown = (e) => {
+        let dx = 0, dy = 0;
+        if(e.key === "ArrowUp") dy = -1;
+        if(e.key === "ArrowDown") dy = 1;
+        if(e.key === "ArrowLeft") dx = -1;
+        if(e.key === "ArrowRight") dx = 1;
+        
+        if(maze[player.y + dy] && maze[player.y + dy][player.x + dx] !== 1) {
+            player.x += dx; player.y += dy;
+        }
+    };
+    draw();
+}
+</script>
+</body>
+</html>
